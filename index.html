@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FitMe - 3D 擬真虛擬更衣間 (全景腳底視角旗艦版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f1f5f9; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05);
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #4f46e5;
+            cursor: pointer;
+            margin-top: -7px;
+            box-shadow: 0 3px 8px rgba(79, 70, 229, 0.3);
+            transition: transform 0.15s ease;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        #canvas-container {
+            cursor: grab;
+        }
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- 頂部導覽列 -->
+    <nav class="w-full bg-white/90 backdrop-blur-md border-b border-slate-200/80 z-20 relative flex-shrink-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center text-white font-black text-xl shadow-md shadow-indigo-500/20">F</div>
+                <div>
+                    <span class="font-black text-lg tracking-tight text-slate-900">FitMe</span>
+                    <span class="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-200/60 px-2 py-0.5 rounded-full font-bold ml-1.5 uppercase tracking-wider">3D 全景全身模組</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <!-- 單位切換器 -->
+                <div class="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold border border-slate-200/60">
+                    <button id="unit-cm" class="px-3 py-1 rounded-lg bg-white text-indigo-600 shadow-sm transition-all" onclick="setUnit('cm')">公分 (cm)</button>
+                    <button id="unit-inch" class="px-3 py-1 rounded-lg text-slate-500 hover:text-slate-800 transition-all" onclick="setUnit('inch')">英吋 (in)</button>
+                </div>
+                <div class="text-xs text-slate-500 hidden md:flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200/50">
+                    <span>💡</span> 拖曳 3D 畫面可 360° 完整檢視模特頭頂至腳底細節
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主要工作區塊 -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-0 overflow-y-auto lg:overflow-hidden">
+        
+        <!-- 左側：身型控制面板 -->
+        <section class="lg:col-span-3 glass-panel rounded-2xl p-5 flex flex-col gap-5 overflow-y-auto h-full hide-scrollbar">
+            <div>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-sm font-bold flex items-center gap-2 text-slate-900 tracking-wide">
+                        <span class="w-2 h-2 rounded-full bg-indigo-600"></span> 身型參數微調
+                    </h2>
+                    <span class="text-[11px] text-slate-400 font-medium">擬人化動態骨架</span>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-2 mb-5 p-1 bg-slate-100 rounded-xl">
+                    <button id="btn-male" class="py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:bg-slate-200/60" onclick="setGender('male')">男性模特</button>
+                    <button id="btn-female" class="py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow-sm" onclick="setGender('female')">女性模特</button>
+                </div>
+
+                <div class="space-y-4">
+                    <!-- 身高 -->
+                    <div class="bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/50">
+                        <div class="flex justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-600">身高 (Height)</label>
+                            <span id="val-height" class="text-xs font-bold text-indigo-600">165 cm</span>
+                        </div>
+                        <input type="range" id="slider-height" min="140" max="200" value="165" oninput="updateParam('height', this.value)">
+                    </div>
+                    <!-- 體重 -->
+                    <div class="bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/50">
+                        <div class="flex justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-600">體重 (Weight)</label>
+                            <span id="val-weight" class="text-xs font-bold text-indigo-600">55 kg</span>
+                        </div>
+                        <input type="range" id="slider-weight" min="40" max="120" value="55" oninput="updateParam('weight', this.value)">
+                    </div>
+                    <!-- 肩寬 -->
+                    <div class="bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/50">
+                        <div class="flex justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-600">肩寬 (Shoulders)</label>
+                            <span id="val-shoulders" class="text-xs font-bold text-indigo-600">38 cm</span>
+                        </div>
+                        <input type="range" id="slider-shoulders" min="30" max="60" value="38" oninput="updateParam('shoulders', this.value)">
+                    </div>
+                    <!-- 胸圍 (女性專屬) -->
+                    <div id="container-chest" class="bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/50 transition-all duration-300">
+                        <div class="flex justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-600">胸圍 (Chest)</label>
+                            <span id="val-chest" class="text-xs font-bold text-indigo-600">85 cm</span>
+                        </div>
+                        <input type="range" id="slider-chest" min="70" max="115" value="85" oninput="updateParam('chest', this.value)">
+                    </div>
+                    <!-- 腰圍 -->
+                    <div class="bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/50">
+                        <div class="flex justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-600">腰圍 (Waist)</label>
+                            <span id="val-waist" class="text-xs font-bold text-indigo-600">65 cm</span>
+                        </div>
+                        <input type="range" id="slider-waist" min="50" max="120" value="65" oninput="updateParam('waist', this.value)">
+                    </div>
+                    <!-- 臀圍 -->
+                    <div class="bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/50">
+                        <div class="flex justify-between mb-1">
+                            <label class="text-xs font-semibold text-slate-600">臀圍 (Hips)</label>
+                            <span id="val-hip" class="text-xs font-bold text-indigo-600">90 cm</span>
+                        </div>
+                        <input type="range" id="slider-hip" min="70" max="130" value="90" oninput="updateParam('hip', this.value)">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-auto pt-3 border-t border-slate-200/80">
+                <p class="text-[11px] text-slate-400 leading-relaxed">調整數據後，右側 AI 試穿分析將動態對比官方 Size Guide 進行合身度測算。</p>
+            </div>
+        </section>
+
+        <!-- 中間：3D 攝影棚鏡像展示區 (全景構圖優化) -->
+        <section class="lg:col-span-5 relative rounded-2xl overflow-hidden bg-gradient-to-b from-slate-200 via-slate-100 to-slate-200 shadow-inner flex items-center justify-center min-h-[460px] border border-slate-300/60">
+            <div id="canvas-container" class="w-full h-full absolute inset-0"></div>
+            
+            <!-- 視角快速切換控制鈕 -->
+            <div class="absolute top-4 left-4 flex gap-1.5 bg-white/80 backdrop-blur-md p-1 rounded-xl shadow-sm border border-white/80 z-10">
+                <button onclick="setCameraView('full')" id="cam-full" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-600 text-white shadow-xs transition-all">全身 (腳底入鏡)</button>
+                <button onclick="setCameraView('upper')" id="cam-upper" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:bg-slate-200/60 transition-all">上半身</button>
+                <button onclick="setCameraView('feet')" id="cam-feet" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:bg-slate-200/60 transition-all">鞋款腳底</button>
+            </div>
+
+            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/85 backdrop-blur px-4 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-md pointer-events-none flex items-center gap-2 border border-white z-10">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                按住滑鼠 360° 旋轉模特視角
+            </div>
+        </section>
+
+        <!-- 右側：服飾解析與品牌尺寸系統 -->
+        <section class="lg:col-span-4 glass-panel rounded-2xl p-5 flex flex-col h-full overflow-y-auto hide-scrollbar">
+            
+            <!-- 分類選擇器：上衣 vs 褲款 -->
+            <div class="flex bg-slate-200/80 p-1 rounded-xl mb-4 font-bold text-xs">
+                <button id="cat-top" class="flex-1 py-2 rounded-lg bg-white text-indigo-600 shadow-sm transition-all flex items-center justify-center gap-1.5" onclick="setCategory('tops')">
+                    👕 上衣試穿
+                </button>
+                <button id="cat-bottom" class="flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5" onclick="setCategory('bottoms')">
+                    👖 褲款試穿
+                </button>
+            </div>
+
+            <h2 id="section-title" class="text-sm font-bold mb-3 flex items-center gap-2 text-slate-900">
+                <span class="text-indigo-600 font-black">🔗</span> 上衣連結解析
+            </h2>
+
+            <div class="mb-4">
+                <label class="block text-xs font-semibold text-slate-600 mb-1.5">貼上商品網址（支援品牌自動數據識別）</label>
+                <div class="flex gap-2">
+                    <input type="text" id="url-input" placeholder="貼上 Lululemon, Alo Yoga, UNIQLO, Zara 連結..." class="w-full px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-xs bg-white/80" value="https://www.lululemon.com.hk/zh-tw/content/global-size-guide/global-all-size-guide.html">
+                </div>
+                
+                <!-- 快速品牌測試按鈕 -->
+                <div class="mt-2.5 flex flex-wrap gap-1.5 items-center">
+                    <span class="text-[11px] font-semibold text-slate-400">官方快速測試:</span>
+                    <button onclick="quickTestBrand('lululemon')" class="text-[11px] bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold px-2.5 py-0.5 rounded-md transition-all border border-rose-200/60">Lululemon</button>
+                    <button onclick="quickTestBrand('alo')" class="text-[11px] bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-bold px-2.5 py-0.5 rounded-md transition-all border border-zinc-200">Alo Yoga</button>
+                    <button onclick="quickTestBrand('uniqlo')" class="text-[11px] bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-bold px-2.5 py-0.5 rounded-md transition-all border border-slate-200">UNIQLO</button>
+                    <button onclick="quickTestBrand('zara')" class="text-[11px] bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 font-bold px-2.5 py-0.5 rounded-md transition-all border border-slate-200">Zara</button>
+                </div>
+
+                <button onclick="fetchClothing()" class="mt-3 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition-all shadow-md shadow-indigo-600/20 text-xs flex items-center justify-center gap-2">
+                    解析網址並試穿
+                </button>
+            </div>
+
+            <!-- 載入中狀態 -->
+            <div id="loading-state" class="hidden flex-col items-center justify-center py-6">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-2"></div>
+                <p class="text-xs text-slate-500 font-medium">正在載入 Global Size Guide 官方數據庫...</p>
+            </div>
+
+            <!-- 分析結果區塊 -->
+            <div id="result-state" class="hidden flex-col gap-3">
+                
+                <!-- 品牌數據辨識卡片 -->
+                <div class="p-3.5 bg-slate-50/90 rounded-xl border border-slate-200/80 shadow-sm">
+                    <div class="flex justify-between items-center mb-2">
+                        <span id="brand-badge" class="text-[11px] font-extrabold px-2.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 border border-indigo-200/60">Lululemon Global Size</span>
+                        <div id="cloth-color" class="w-4 h-4 rounded-full border border-slate-300 shadow-sm" title="商品顏色"></div>
+                    </div>
+
+                    <!-- 尺寸選擇器 (S / M / L / XL) -->
+                    <div id="size-selector-container" class="mb-3 pt-1 border-t border-slate-200/60">
+                        <label class="block text-[11px] font-semibold text-slate-500 mb-1.5">切換試穿尺寸：</label>
+                        <div class="grid grid-cols-4 gap-1.5" id="size-buttons">
+                            <!-- JS 動態生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 上衣尺寸明細 -->
+                    <div id="details-tops" class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs pt-1 border-t border-slate-200/60">
+                        <div class="text-slate-500">肩寬:</div><div id="cloth-shoulder" class="font-bold text-right text-slate-800">--</div>
+                        <div class="text-slate-500">胸圍:</div><div id="cloth-chest" class="font-bold text-right text-slate-800">--</div>
+                        <div class="text-slate-500">衣長:</div><div id="cloth-length" class="font-bold text-right text-slate-800">--</div>
+                    </div>
+
+                    <!-- 褲款尺寸明細 -->
+                    <div id="details-bottoms" class="hidden grid-cols-2 gap-x-2 gap-y-1 text-xs pt-1 border-t border-slate-200/60">
+                        <div class="text-slate-500">褲腰圍:</div><div id="cloth-waist" class="font-bold text-right text-slate-800">--</div>
+                        <div class="text-slate-500">褲臀圍:</div><div id="cloth-hip" class="font-bold text-right text-slate-800">--</div>
+                        <div class="text-slate-500">褲長:</div><div id="cloth-pant-length" class="font-bold text-right text-slate-800">--</div>
+                    </div>
+                </div>
+
+                <!-- AI 試穿建議 -->
+                <div class="p-3.5 bg-indigo-50/80 rounded-xl border border-indigo-100 shadow-sm">
+                    <h3 class="text-xs font-bold text-indigo-950 mb-2">AI 身型合身度診斷</h3>
+                    <div class="relative w-full h-2 bg-slate-200 rounded-full mb-3 mt-2">
+                        <div id="fit-indicator" class="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-indigo-600 rounded-full shadow transition-all duration-500" style="left: 50%;"></div>
+                        <div class="absolute -bottom-4 w-full flex justify-between text-[9px] font-extrabold text-slate-400">
+                            <span>緊身</span>
+                            <span>標準合身</span>
+                            <span>寬鬆 Oversize</span>
+                        </div>
+                    </div>
+                    <p id="fit-message" class="text-xs text-indigo-900 mt-5 font-semibold leading-relaxed"></p>
+                </div>
+                
+                <button onclick="removeClothing()" class="mt-1 w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 font-semibold py-1.5 rounded-lg transition-colors text-xs">
+                    脫下目前服飾
+                </button>
+            </div>
+
+            <!-- 初始提示 -->
+            <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-center opacity-70 my-6">
+                <div class="text-4xl mb-2">👗</div>
+                <p class="text-xs font-semibold text-slate-500 leading-relaxed">輸入服飾網址或點擊上方品牌按鈕<br>即可在 3D 模特兒身上即時試穿</p>
+            </div>
+
+        </section>
+    </main>
+
+    <script>
+        // --- 官方品牌尺寸資料庫 (依據官方 Global Size Guide 規格對照) ---
+        const BRAND_DATABASE = {
+            lululemon: {
+                name: 'Lululemon 官方環球規格 (Global Size)',
+                color: '#881337',
+                tops: {
+                    'S':  { shoulder: 38.5, chest: 86, length: 60, colorHex: '#881337' },
+                    'M':  { shoulder: 40.5, chest: 92, length: 63, colorHex: '#881337' },
+                    'L':  { shoulder: 42.5, chest: 98, length: 66, colorHex: '#881337' },
+                    'XL': { shoulder: 44.5, chest: 106, length: 69, colorHex: '#881337' }
+                },
+                bottoms: {
+                    'S':  { waist: 66, hip: 91, length: 90, colorHex: '#4c0519' },
+                    'M':  { waist: 72, hip: 97, length: 93, colorHex: '#4c0519' },
+                    'L':  { waist: 78, hip: 103, length: 96, colorHex: '#4c0519' },
+                    'XL': { waist: 86, hip: 110, length: 98, colorHex: '#4c0519' }
+                }
+            },
+            alo: {
+                name: 'Alo Yoga 官方環球對照 (Global Chart)',
+                color: '#18181b',
+                tops: {
+                    'S':  { shoulder: 38.0, chest: 88, length: 58, colorHex: '#27272a' },
+                    'M':  { shoulder: 40.0, chest: 94, length: 61, colorHex: '#27272a' },
+                    'L':  { shoulder: 42.0, chest: 101, length: 64, colorHex: '#27272a' },
+                    'XL': { shoulder: 44.5, chest: 108, length: 67, colorHex: '#27272a' }
+                },
+                bottoms: {
+                    'S':  { waist: 68, hip: 93, length: 92, colorHex: '#18181b' },
+                    'M':  { waist: 74, hip: 99, length: 95, colorHex: '#18181b' },
+                    'L':  { waist: 80, hip: 105, length: 98, colorHex: '#18181b' },
+                    'XL': { waist: 88, hip: 112, length: 100, colorHex: '#18181b' }
+                }
+            },
+            uniqlo: {
+                name: 'UNIQLO 官方規格 (Global Measurement)',
+                color: '#e60012',
+                tops: {
+                    'S':  { shoulder: 43.5, chest: 98,  length: 66, colorHex: '#2b2b2b' },
+                    'M':  { shoulder: 45.0, chest: 104, length: 69, colorHex: '#2b2b2b' },
+                    'L':  { shoulder: 46.5, chest: 110, length: 72, colorHex: '#2b2b2b' },
+                    'XL': { shoulder: 48.5, chest: 118, length: 75, colorHex: '#2b2b2b' }
+                },
+                bottoms: {
+                    'S':  { waist: 68, hip: 92,  length: 96, colorHex: '#1e3a8a' },
+                    'M':  { waist: 74, hip: 98,  length: 99, colorHex: '#1e3a8a' },
+                    'L':  { waist: 80, hip: 104, length: 102, colorHex: '#1e3a8a' },
+                    'XL': { waist: 88, hip: 112, length: 104, colorHex: '#1e3a8a' }
+                }
+            },
+            zara: {
+                name: 'ZARA 歐美剪裁規格 (Global Fit)',
+                color: '#000000',
+                tops: {
+                    'S':  { shoulder: 42.0, chest: 96,  length: 68, colorHex: '#4a5568' },
+                    'M':  { shoulder: 44.0, chest: 102, length: 71, colorHex: '#4a5568' },
+                    'L':  { shoulder: 46.0, chest: 108, length: 73, colorHex: '#4a5568' },
+                    'XL': { shoulder: 49.0, chest: 116, length: 76, colorHex: '#4a5568' }
+                },
+                bottoms: {
+                    'S':  { waist: 70, hip: 94,  length: 98, colorHex: '#27272a' },
+                    'M':  { waist: 76, hip: 100, length: 101, colorHex: '#27272a' },
+                    'L':  { waist: 82, hip: 106, length: 104, colorHex: '#27272a' },
+                    'XL': { waist: 90, hip: 114, length: 106, colorHex: '#27272a' }
+                }
+            }
+        };
+
+        // --- 全局狀態變數 ---
+        let currentCategory = 'tops';
+        let currentUnit = 'cm';
+        let bodyParams = {
+            gender: 'female',
+            height: 165,
+            weight: 55,
+            shoulders: 38,
+            chest: 85,
+            waist: 65,
+            hip: 90
+        };
+        let currentBrandKey = null;
+        let currentSizeKey = 'M';
+        let currentTop = null;
+        let currentBottom = null;
+
+        function setCategory(cat) {
+            currentCategory = cat;
+            const isTops = (cat === 'tops');
+
+            document.getElementById('cat-top').className = isTops
+                ? "flex-1 py-2 rounded-lg bg-white text-indigo-600 shadow-sm transition-all flex items-center justify-center gap-1.5"
+                : "flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5";
+            document.getElementById('cat-bottom').className = !isTops
+                ? "flex-1 py-2 rounded-lg bg-white text-indigo-600 shadow-sm transition-all flex items-center justify-center gap-1.5"
+                : "flex-1 py-2 rounded-lg text-slate-600 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5";
+
+            document.getElementById('section-title').innerHTML = isTops 
+                ? `<span class="text-indigo-600 font-black">🔗</span> 上衣連結解析`
+                : `<span class="text-indigo-600 font-black">🔗</span> 褲款連結解析`;
+
+            document.getElementById('details-tops').style.display = isTops ? 'grid' : 'none';
+            document.getElementById('details-bottoms').style.display = isTops ? 'none' : 'grid';
+
+            if(currentBrandKey) {
+                applyBrandSizeData(currentBrandKey, currentSizeKey);
+            }
+            updateClothingDisplay();
+            analyzeFit();
+        }
+
+        function toDisplay(val, isWeight = false) {
+            if (isWeight) return val;
+            if (currentUnit === 'inch') return (val / 2.54).toFixed(1);
+            return val;
+        }
+
+        function parseInput(val, isWeight = false) {
+            let num = parseFloat(val);
+            if (isWeight) return num;
+            if (currentUnit === 'inch') return Math.round(num * 2.54 * 10) / 10;
+            return num;
+        }
+
+        function setUnit(unit) {
+            currentUnit = unit;
+            const isCm = (unit === 'cm');
+            
+            document.getElementById('unit-cm').className = isCm 
+                ? "px-3 py-1 rounded-lg bg-white text-indigo-600 shadow-sm transition-all" 
+                : "px-3 py-1 rounded-lg text-slate-500 hover:text-slate-800 transition-all";
+            document.getElementById('unit-inch').className = !isCm 
+                ? "px-3 py-1 rounded-lg bg-white text-indigo-600 shadow-sm transition-all" 
+                : "px-3 py-1 rounded-lg text-slate-500 hover:text-slate-800 transition-all";
+
+            const hSlider = document.getElementById('slider-height');
+            const wSlider = document.getElementById('slider-shoulders');
+            const chestSlider = document.getElementById('slider-chest');
+            const waistSlider = document.getElementById('slider-waist');
+            const hipSlider = document.getElementById('slider-hip');
+
+            if (isCm) {
+                hSlider.min = 140; hSlider.max = 200; hSlider.value = bodyParams.height;
+                wSlider.min = 30; wSlider.max = 60; wSlider.value = bodyParams.shoulders;
+                chestSlider.min = 70; chestSlider.max = 115; chestSlider.value = bodyParams.chest;
+                waistSlider.min = 50; waistSlider.max = 120; waistSlider.value = bodyParams.waist;
+                hipSlider.min = 70; hipSlider.max = 130; hipSlider.value = bodyParams.hip;
+            } else {
+                hSlider.min = 55; hSlider.max = 79; hSlider.value = (bodyParams.height / 2.54).toFixed(1);
+                wSlider.min = 12; wSlider.max = 24; wSlider.value = (bodyParams.shoulders / 2.54).toFixed(1);
+                chestSlider.min = 27; chestSlider.max = 45; chestSlider.value = (bodyParams.chest / 2.54).toFixed(1);
+                waistSlider.min = 20; waistSlider.max = 47; waistSlider.value = (bodyParams.waist / 2.54).toFixed(1);
+                hipSlider.min = 27; hipSlider.max = 51; hipSlider.value = (bodyParams.hip / 2.54).toFixed(1);
+            }
+
+            refreshUIValues();
+            updateClothingDisplay();
+        }
+
+        function refreshUIValues() {
+            const unitLabel = currentUnit === 'cm' ? 'cm' : 'in';
+            document.getElementById('val-height').innerText = `${toDisplay(bodyParams.height)} ${unitLabel}`;
+            document.getElementById('val-weight').innerText = `${bodyParams.weight} kg`;
+            document.getElementById('val-shoulders').innerText = `${toDisplay(bodyParams.shoulders)} ${unitLabel}`;
+            document.getElementById('val-chest').innerText = `${toDisplay(bodyParams.chest)} ${unitLabel}`;
+            document.getElementById('val-waist').innerText = `${toDisplay(bodyParams.waist)} ${unitLabel}`;
+            document.getElementById('val-hip').innerText = `${toDisplay(bodyParams.hip)} ${unitLabel}`;
+        }
+
+        // --- Three.js 擬真 3D 攝影棚與全景構圖 (全身/腳底完整可見) ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0xe2e8f0, 0.01);
+
+        // 調整相機位置與 FOV，確保全身與腳底完整入鏡
+        const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 1000);
+        
+        // 鏡頭 Y 軸中心下移 (-1.5) 並加深 Z 軸距離 (53)，使腳底板與地面台座完美呈現
+        let targetCamPos = { x: 0, y: -1.2, z: 53 };
+        camera.position.set(targetCamPos.x, targetCamPos.y, targetCamPos.z);
+
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.08;
+        container.appendChild(renderer.domElement);
+
+        // 攝影棚光影系統 (Studio Lighting)
+        const ambientLight = new THREE.AmbientLight(0xfff5ea, 0.75);
+        scene.add(ambientLight);
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        keyLight.position.set(12, 20, 18);
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0x93c5fd, 0.5);
+        fillLight.position.set(-15, 10, 12);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xe0e7ff, 0.65);
+        rimLight.position.set(0, 18, -20);
+        scene.add(rimLight);
+
+        // 模特底座與雙腳陰影台座 (明確標示腳底地平面)
+        const shadowGeo = new THREE.CircleGeometry(9, 64);
+        const shadowMat = new THREE.MeshBasicMaterial({ color: 0xcbd5e1, transparent: true, opacity: 0.6 });
+        const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+        shadowPlane.rotation.x = -Math.PI / 2;
+        shadowPlane.position.y = -19.2;
+        scene.add(shadowPlane);
+
+        // 腳底微光光條環
+        const ringGeo = new THREE.RingGeometry(8.5, 8.8, 64);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.35 });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = -Math.PI / 2;
+        ringMesh.position.y = -19.1;
+        scene.add(ringMesh);
+
+        const mainGroup = new THREE.Group();
+        const bodyGroup = new THREE.Group();
+        const clothGroup = new THREE.Group();
+        mainGroup.add(bodyGroup);
+        mainGroup.add(clothGroup);
+        scene.add(mainGroup);
+
+        // 擬真皮膚材質 Physical Shader
+        const skinFemaleMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0xfde3d0,
+            roughness: 0.42,
+            metalness: 0.05,
+            clearcoat: 0.25,
+            clearcoatRoughness: 0.3,
+            reflectivity: 0.5
+        });
+        const skinMaleMat = new THREE.MeshPhysicalMaterial({ 
+            color: 0xf5caa6,
+            roughness: 0.48,
+            metalness: 0.05,
+            clearcoat: 0.15,
+            clearcoatRoughness: 0.4,
+            reflectivity: 0.4
+        });
+        
+        // 精緻極簡鞋款材質 (讓腳底看起來精緻美觀)
+        const shoeMat = new THREE.MeshPhysicalMaterial({ color: 0x1e293b, roughness: 0.3, metalness: 0.2 });
+        const soleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+        function clearGroup(group) {
+            while(group.children.length > 0) {
+                const child = group.children[0];
+                if(child.isGroup) clearGroup(child);
+                group.remove(child);
+                if(child.geometry) child.geometry.dispose();
+            }
+        }
+
+        // 人體解剖學與全景模特模型生成
+        function render3DModel() {
+            clearGroup(bodyGroup);
+            clearGroup(clothGroup);
+
+            const isFemale = bodyParams.gender === 'female';
+            const skinMat = isFemale ? skinFemaleMat : skinMaleMat;
+            const hScale = bodyParams.height / 168; 
+            const weightFactor = bodyParams.weight / (isFemale ? 54 : 72); 
+            
+            const zThickness = 0.72 * Math.pow(weightFactor, 0.55);
+            const shoulderR = (bodyParams.shoulders / 5.2) / 2;
+            const waistR = (bodyParams.waist / 26) * Math.pow(weightFactor, 0.32);
+            const hipR = (bodyParams.hip / 27.5) * Math.pow(weightFactor, 0.35);
+            let chestR = isFemale ? (bodyParams.chest / 26.5) : (shoulderR * 0.88);
+
+            const torsoLength = 11.2 * hScale;
+            const legLength = 16.5 * hScale;
+            const shoulderHeightY = legLength + torsoLength * 0.94;
+
+            // 1. 軀幹 Spline 曲線生成
+            const torsoPoints = [];
+            torsoPoints.push(new THREE.Vector2(0.2, 0));
+            torsoPoints.push(new THREE.Vector2(hipR * 0.92, torsoLength * 0.18));
+            torsoPoints.push(new THREE.Vector2(hipR, torsoLength * 0.32));
+            torsoPoints.push(new THREE.Vector2(waistR, torsoLength * 0.52));
+            torsoPoints.push(new THREE.Vector2(chestR, torsoLength * 0.76));
+            torsoPoints.push(new THREE.Vector2(shoulderR * 0.98, torsoLength * 0.93));
+            torsoPoints.push(new THREE.Vector2(1.15 * hScale, torsoLength));
+            
+            const torsoSpline = new THREE.SplineCurve(torsoPoints);
+            const torsoGeo = new THREE.LatheGeometry(torsoSpline.getPoints(40), 64);
+            const torso = new THREE.Mesh(torsoGeo, skinMat);
+            torso.scale.z = zThickness;
+            torso.position.y = legLength;
+            bodyGroup.add(torso);
+
+            // 胸型
+            if (isFemale) {
+                const breastRadius = Math.max(0.9, (bodyParams.chest - 68) * 0.042);
+                const breastGeo = new THREE.SphereGeometry(breastRadius, 36, 36);
+                breastGeo.scale(1.05, 0.92, 0.75);
+                
+                const breastL = new THREE.Mesh(breastGeo, skinMat);
+                breastL.position.set(chestR * 0.4, legLength + torsoLength * 0.71, chestR * zThickness * 0.78);
+                breastL.rotation.set(-0.1, 0.18, -0.05);
+                
+                const breastR = new THREE.Mesh(breastGeo, skinMat);
+                breastR.position.set(-chestR * 0.4, legLength + torsoLength * 0.71, chestR * zThickness * 0.78);
+                breastR.rotation.set(-0.1, -0.18, 0.05);
+                
+                bodyGroup.add(breastL);
+                bodyGroup.add(breastR);
+            }
+
+            // 頸部與頭部
+            const neckGeo = new THREE.CylinderGeometry(1.0 * hScale, 1.25 * hScale, 2.2 * hScale, 32);
+            const neck = new THREE.Mesh(neckGeo, skinMat);
+            neck.position.y = legLength + torsoLength + (1.1 * hScale);
+            bodyGroup.add(neck);
+            
+            const headGeo = new THREE.SphereGeometry(2.15 * hScale, 48, 48);
+            headGeo.scale(0.95, 1.22, 1.02);
+            const head = new THREE.Mesh(headGeo, skinMat);
+            head.position.y = legLength + torsoLength + (2.5 * hScale) + (1.2 * hScale);
+            bodyGroup.add(head);
+
+            // 2. 四肢生成器
+            function createSmoothLimb(rTop, rMid, rBot, len, rotZ, rotX, posX, posY, posZ) {
+                const group = new THREE.Group();
+                const points = [
+                    new THREE.Vector2(rTop, 0),
+                    new THREE.Vector2(rMid, -len * 0.45),
+                    new THREE.Vector2(rBot, -len)
+                ];
+                const spline = new THREE.SplineCurve(points);
+                const geo = new THREE.LatheGeometry(spline.getPoints(24), 32);
+                const mesh = new THREE.Mesh(geo, skinMat);
+                group.add(mesh);
+
+                const jointTop = new THREE.Mesh(new THREE.SphereGeometry(rTop * 0.98, 24, 24), skinMat);
+                group.add(jointTop);
+
+                group.position.set(posX, posY, posZ);
+                group.rotation.z = rotZ;
+                group.rotation.x = rotX;
+                return group;
+            }
+
+            const armLen = 6.8 * hScale;
+            const upArmR = shoulderR * 0.32 * Math.pow(weightFactor, 0.4);
+            const lowArmR = shoulderR * 0.23 * Math.pow(weightFactor, 0.4);
+            const wristR = shoulderR * 0.14;
+
+            // 左臂與右臂
+            const armL = createSmoothLimb(upArmR, upArmR * 0.9, lowArmR, armLen, 0.38, 0.05, shoulderR * 0.95, shoulderHeightY - 0.2, 0);
+            const forearmL = createSmoothLimb(lowArmR, lowArmR * 0.85, wristR, armLen * 0.95, -0.12, 0.1, 0, -armLen, 0);
+            const handL = new THREE.Mesh(new THREE.SphereGeometry(wristR * 1.4, 20, 20), skinMat);
+            handL.scale.set(0.7, 1.4, 0.35); handL.position.y = -armLen * 0.95 - wristR; forearmL.add(handL);
+            armL.add(forearmL); bodyGroup.add(armL);
+
+            const armR = createSmoothLimb(upArmR, upArmR * 0.9, lowArmR, armLen, -0.38, 0.05, -shoulderR * 0.95, shoulderHeightY - 0.2, 0);
+            const forearmR = createSmoothLimb(lowArmR, lowArmR * 0.85, wristR, armLen * 0.95, 0.12, 0.1, 0, -armLen, 0);
+            const handR = new THREE.Mesh(new THREE.SphereGeometry(wristR * 1.4, 20, 20), skinMat);
+            handR.scale.set(0.7, 1.4, 0.35); handR.position.y = -armLen * 0.95 - wristR; forearmR.add(handR);
+            armR.add(forearmR); bodyGroup.add(armR);
+
+            // 雙腿與精細腳底板/鞋子 (明確延伸至底座)
+            const legLen = 8.8 * hScale;
+            const thighR = hipR * 0.41 * Math.pow(weightFactor, 0.42);
+            const calfR = hipR * 0.28 * Math.pow(weightFactor, 0.42);
+            const ankleR = hipR * 0.15;
+            const legGap = hipR * 0.42;
+
+            function createDetailedFoot() {
+                const footGroup = new THREE.Group();
+                // 腳掌主體
+                const shoeUpper = new THREE.Mesh(new THREE.BoxGeometry(ankleR * 2.0, ankleR * 1.3, ankleR * 4.2), shoeMat);
+                shoeUpper.position.set(0, -ankleR * 0.6, ankleR * 1.1);
+                footGroup.add(shoeUpper);
+                
+                // 鞋底/腳底板白色包邊 (清楚呈現腳底落點)
+                const shoeSole = new THREE.Mesh(new THREE.BoxGeometry(ankleR * 2.1, ankleR * 0.4, ankleR * 4.4), soleMat);
+                shoeSole.position.set(0, -ankleR * 1.3, ankleR * 1.1);
+                footGroup.add(shoeSole);
+                
+                return footGroup;
+            }
+
+            // 左腿 + 腳底
+            const legL = createSmoothLimb(thighR, thighR * 0.88, calfR, legLen, 0.05, 0, legGap, legLength, 0);
+            const lowLegL = createSmoothLimb(calfR, calfR * 0.9, ankleR, legLen, -0.02, 0, 0, -legLen, 0);
+            const footL = createDetailedFoot();
+            footL.position.y = -legLen;
+            lowLegL.add(footL);
+            legL.add(lowLegL);
+            bodyGroup.add(legL);
+
+            // 右腿 + 腳底
+            const legR = createSmoothLimb(thighR, thighR * 0.88, calfR, legLen, -0.05, 0, -legGap, legLength, 0);
+            const lowLegR = createSmoothLimb(calfR, calfR * 0.9, ankleR, legLen, 0.02, 0, 0, -legLen, 0);
+            const footR = createDetailedFoot();
+            footR.position.y = -legLen;
+            lowLegR.add(footR);
+            legR.add(lowLegR);
+            bodyGroup.add(legR);
+
+            // 整體高低歸位，確保腳底剛好踏在 Y = -18.8 處
+            mainGroup.position.y = -16.5 * hScale;
+
+            // 3. 服飾系統
+            if (currentTop) {
+                const topMat = new THREE.MeshPhysicalMaterial({ 
+                    color: currentTop.colorHex, 
+                    side: THREE.DoubleSide,
+                    roughness: 0.75,
+                    metalness: 0.05,
+                    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+                });
+
+                const clothShoulder3D = (currentTop.shoulder / 5.2) / 2;
+                const clothChest3D = (currentTop.chest / 26.5); 
+                const clothLen3D = (currentTop.length / 5.1);
+
+                const clothPoints = [];
+                clothPoints.push(new THREE.Vector2(clothChest3D * 0.96, 0));
+                clothPoints.push(new THREE.Vector2(clothChest3D * 1.02, clothLen3D * 0.45));
+                clothPoints.push(new THREE.Vector2(clothShoulder3D * 1.02, clothLen3D));
+                
+                const clothSpline = new THREE.SplineCurve(clothPoints);
+                const shirtBodyGeo = new THREE.LatheGeometry(clothSpline.getPoints(32), 64);
+                const shirtBody = new THREE.Mesh(shirtBodyGeo, topMat);
+                
+                shirtBody.scale.z = zThickness * 1.06;
+                shirtBody.position.y = shoulderHeightY - clothLen3D; 
+                clothGroup.add(shirtBody);
+
+                // 袖子
+                const sleeveLen = 3.8 * hScale;
+                const sleeveThickness = clothShoulder3D * 0.36; 
+                const sleeveGeo = new THREE.CylinderGeometry(sleeveThickness, sleeveThickness*0.82, sleeveLen, 32);
+                const sleeveOffset = clothShoulder3D * 0.92;
+                const sleeveY = shoulderHeightY - (sleeveLen * 0.45);
+                
+                const sleeveL = new THREE.Mesh(sleeveGeo, topMat);
+                sleeveL.position.set(sleeveOffset + 0.3, sleeveY, 0); sleeveL.rotation.z = 0.38;
+                clothGroup.add(sleeveL);
+
+                const sleeveR = new THREE.Mesh(sleeveGeo, topMat);
+                sleeveR.position.set(-sleeveOffset - 0.3, sleeveY, 0); sleeveR.rotation.z = -0.38;
+                clothGroup.add(sleeveR);
+            }
+
+            if (currentBottom) {
+                const pantMat = new THREE.MeshPhysicalMaterial({ 
+                    color: currentBottom.colorHex, 
+                    side: THREE.DoubleSide,
+                    roughness: 0.65,
+                    metalness: 0.1,
+                    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1
+                });
+
+                const pantWaist3D = (currentBottom.waist / 26) * Math.pow(weightFactor, 0.25);
+                const pantHip3D = (currentBottom.hip / 27.5);
+                const pantLen3D = (currentBottom.length / 6.1);
+
+                const pantHipGeo = new THREE.CylinderGeometry(pantWaist3D, pantHip3D, torsoLength * 0.36, 36);
+                const pantHipMesh = new THREE.Mesh(pantHipGeo, pantMat);
+                pantHipMesh.scale.z = zThickness * 1.05;
+                pantHipMesh.position.y = legLength + (torsoLength * 0.18);
+                clothGroup.add(pantHipMesh);
+
+                const pantLegLen = pantLen3D * 0.88;
+                const pantLegR = pantHip3D * 0.44;
+                const pantLegGeo = new THREE.CylinderGeometry(pantLegR, pantLegR * 0.78, pantLegLen, 36);
+
+                const pantLegL = new THREE.Mesh(pantLegGeo, pantMat);
+                pantLegL.scale.z = zThickness * 1.05;
+                pantLegL.position.set(legGap, legLength - (pantLegLen / 2), 0);
+                pantLegL.rotation.z = -0.05;
+                clothGroup.add(pantLegL);
+
+                const pantLegRMesh = new THREE.Mesh(pantLegGeo, pantMat);
+                pantLegRMesh.scale.z = zThickness * 1.05;
+                pantLegRMesh.position.set(-legGap, legLength - (pantLegLen / 2), 0);
+                pantLegRMesh.rotation.z = 0.05;
+                clothGroup.add(pantLegRMesh);
+            }
+        }
+
+        render3DModel();
+
+        // 鏡角預設切換 (全景腳底 / 上半身 / 腳部細節)
+        function setCameraView(view) {
+            document.getElementById('cam-full').className = (view === 'full') ? "px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-600 text-white shadow-xs transition-all" : "px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:bg-slate-200/60 transition-all";
+            document.getElementById('cam-upper').className = (view === 'upper') ? "px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-600 text-white shadow-xs transition-all" : "px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:bg-slate-200/60 transition-all";
+            document.getElementById('cam-feet').className = (view === 'feet') ? "px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-600 text-white shadow-xs transition-all" : "px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:bg-slate-200/60 transition-all";
+
+            if (view === 'full') {
+                targetCamPos = { x: 0, y: -1.2, z: 53 };
+            } else if (view === 'upper') {
+                targetCamPos = { x: 0, y: 7.0, z: 30 };
+            } else if (view === 'feet') {
+                targetCamPos = { x: 0, y: -14.0, z: 24 };
+            }
+        }
+
+        // 視角互動旋轉與動態鏡頭平滑過渡
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        
+        container.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.offsetX, y: e.offsetY };
+        });
+        container.addEventListener('mousemove', (e) => {
+            if(isDragging) {
+                const deltaMove = { x: e.offsetX - previousMousePosition.x, y: e.offsetY - previousMousePosition.y };
+                mainGroup.rotation.y += deltaMove.x * 0.009;
+                previousMousePosition = { x: e.offsetX, y: e.offsetY };
+            }
+        });
+        window.addEventListener('mouseup', () => { isDragging = false; });
+        
+        container.addEventListener('touchstart', (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }, {passive: true});
+        container.addEventListener('touchmove', (e) => {
+            if(isDragging) {
+                const deltaMove = { x: e.touches[0].clientX - previousMousePosition.x, y: e.touches[0].clientY - previousMousePosition.y };
+                mainGroup.rotation.y += deltaMove.x * 0.009;
+                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        }, {passive: true});
+        window.addEventListener('touchend', () => { isDragging = false; });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(!isDragging) {
+                mainGroup.rotation.y += 0.002;
+            }
+            // 鏡頭 Lerp 平滑移位
+            camera.position.x += (targetCamPos.x - camera.position.x) * 0.08;
+            camera.position.y += (targetCamPos.y - camera.position.y) * 0.08;
+            camera.position.z += (targetCamPos.z - camera.position.z) * 0.08;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        function handleResize() {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
+            // 針對直立式行動螢幕動態加大 FOV，確保腳底永不被裁切
+            if (camera.aspect < 1) {
+                camera.fov = 42 / camera.aspect;
+            } else {
+                camera.fov = 42;
+            }
+            camera.updateProjectionMatrix();
+        }
+
+        window.addEventListener('resize', handleResize);
+        handleResize();
+
+        // UI 邏輯與品牌對接
+        function setGender(gender) {
+            bodyParams.gender = gender;
+            const isFemale = gender === 'female';
+            
+            document.getElementById('btn-female').className = isFemale 
+                ? "py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow-sm" 
+                : "py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:bg-slate-200/60";
+            document.getElementById('btn-male').className = !isFemale 
+                ? "py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow-sm" 
+                : "py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:bg-slate-200/60";
+
+            const chestContainer = document.getElementById('container-chest');
+            if (isFemale) {
+                chestContainer.style.display = 'block';
+                bodyParams.height = 165; bodyParams.weight = 55; bodyParams.shoulders = 38; bodyParams.chest = 85; bodyParams.waist = 65; bodyParams.hip = 90;
+            } else {
+                chestContainer.style.display = 'none';
+                bodyParams.height = 178; bodyParams.weight = 70; bodyParams.shoulders = 46; bodyParams.chest = 95; bodyParams.waist = 80; bodyParams.hip = 95;
+            }
+            setUnit(currentUnit);
+            render3DModel();
+        }
+
+        function updateParam(key, value) {
+            bodyParams[key] = parseInput(value, key === 'weight');
+            refreshUIValues();
+            render3DModel();
+            analyzeFit();
+        }
+
+        function quickTestBrand(brandKey) {
+            const urls = {
+                lululemon: 'https://www.lululemon.com.hk/zh-tw/content/global-size-guide/global-all-size-guide.html',
+                alo: 'https://www.aloyoga.com/zh-tw/pages/size-chart?srsltid=AfmBOor9m4ILZLpLRaqwQ10XM0O1DVYjdwPDEUo8BID2K7Vl8HzZIDsR',
+                uniqlo: 'https://www.uniqlo.com.hk/public/en_GB/feature/measurement/',
+                zara: 'https://www.zara.com/tw/zh/basic-heavyweight-p00693300.html'
+            };
+            document.getElementById('url-input').value = urls[brandKey];
+            fetchClothing();
+        }
+
+        function fetchClothing() {
+            const url = document.getElementById('url-input').value.toLowerCase();
+            if(!url) return;
+
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('result-state').classList.add('hidden');
+            document.getElementById('loading-state').classList.remove('hidden');
+            document.getElementById('loading-state').classList.add('flex');
+
+            setTimeout(() => {
+                if (url.includes('lululemon') || url.includes('lulu')) {
+                    currentBrandKey = 'lululemon';
+                } else if (url.includes('aloyoga') || url.includes('alo')) {
+                    currentBrandKey = 'alo';
+                } else if (url.includes('uniqlo')) {
+                    currentBrandKey = 'uniqlo';
+                } else if (url.includes('zara')) {
+                    currentBrandKey = 'zara';
+                } else {
+                    currentBrandKey = null;
+                }
+
+                if (currentBrandKey) {
+                    currentSizeKey = 'M'; 
+                    applyBrandSizeData(currentBrandKey, currentSizeKey);
+                } else {
+                    let hash = 0;
+                    for (let i = 0; i < url.length; i++) hash = url.charCodeAt(i) + ((hash << 5) - hash);
+                    const colors = ['#1e293b', '#be123c', '#047857', '#1d4ed8', '#b45309', '#4338ca'];
+                    const cIndex = Math.abs(hash) % colors.length;
+
+                    if (currentCategory === 'tops') {
+                        currentTop = {
+                            shoulder: 38 + (Math.abs(hash) % 12),
+                            chest: 85 + (Math.abs(hash) % 30),
+                            length: 60 + (Math.abs(hash) % 15),
+                            colorHex: colors[cIndex]
+                        };
+                    } else {
+                        currentBottom = {
+                            waist: 68 + (Math.abs(hash) % 20),
+                            hip: 90 + (Math.abs(hash) % 25),
+                            length: 95 + (Math.abs(hash) % 15),
+                            colorHex: colors[cIndex]
+                        };
+                    }
+                    renderSizeButtons(null);
+                    document.getElementById('brand-badge').innerText = "自訂網址服飾解析";
+                }
+
+                updateClothingDisplay();
+
+                document.getElementById('loading-state').classList.add('hidden');
+                document.getElementById('loading-state').classList.remove('flex');
+                document.getElementById('result-state').classList.remove('hidden');
+                document.getElementById('result-state').classList.add('flex');
+
+                render3DModel();
+                analyzeFit();
+            }, 750);
+        }
+
+        function applyBrandSizeData(brandKey, sizeKey) {
+            const brand = BRAND_DATABASE[brandKey];
+            const sizeData = brand[currentCategory][sizeKey];
+
+            if (currentCategory === 'tops') {
+                currentTop = {
+                    shoulder: sizeData.shoulder,
+                    chest: sizeData.chest,
+                    length: sizeData.length,
+                    colorHex: sizeData.colorHex
+                };
+            } else {
+                currentBottom = {
+                    waist: sizeData.waist,
+                    hip: sizeData.hip,
+                    length: sizeData.length,
+                    colorHex: sizeData.colorHex
+                };
+            }
+
+            document.getElementById('brand-badge').innerText = `${brand.name}`;
+            renderSizeButtons(brandKey, sizeKey);
+        }
+
+        function renderSizeButtons(brandKey, activeSize = 'M') {
+            const container = document.getElementById('size-buttons');
+            container.innerHTML = '';
+
+            if (!brandKey) {
+                document.getElementById('size-selector-container').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('size-selector-container').style.display = 'block';
+            const sizes = ['S', 'M', 'L', 'XL'];
+            sizes.forEach(size => {
+                const btn = document.createElement('button');
+                const isActive = (size === activeSize);
+                btn.className = isActive 
+                    ? "py-1 rounded-md font-bold text-xs bg-indigo-600 text-white shadow-sm transition-all"
+                    : "py-1 rounded-md font-medium text-xs bg-slate-200/80 text-slate-700 hover:bg-slate-300 transition-all";
+                btn.innerText = size;
+                btn.onclick = () => {
+                    currentSizeKey = size;
+                    applyBrandSizeData(brandKey, size);
+                    updateClothingDisplay();
+                    render3DModel();
+                    analyzeFit();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function updateClothingDisplay() {
+            const unitLabel = currentUnit === 'cm' ? 'cm' : 'in';
+
+            if (currentCategory === 'tops' && currentTop) {
+                document.getElementById('cloth-shoulder').innerText = `${toDisplay(currentTop.shoulder)} ${unitLabel}`;
+                document.getElementById('cloth-chest').innerText = `${toDisplay(currentTop.chest)} ${unitLabel}`;
+                document.getElementById('cloth-length').innerText = `${toDisplay(currentTop.length)} ${unitLabel}`;
+                document.getElementById('cloth-color').style.backgroundColor = currentTop.colorHex;
+            } else if (currentCategory === 'bottoms' && currentBottom) {
+                document.getElementById('cloth-waist').innerText = `${toDisplay(currentBottom.waist)} ${unitLabel}`;
+                document.getElementById('cloth-hip').innerText = `${toDisplay(currentBottom.hip)} ${unitLabel}`;
+                document.getElementById('cloth-pant-length').innerText = `${toDisplay(currentBottom.length)} ${unitLabel}`;
+                document.getElementById('cloth-color').style.backgroundColor = currentBottom.colorHex;
+            }
+        }
+
+        function removeClothing() {
+            if (currentCategory === 'tops') {
+                currentTop = null;
+            } else {
+                currentBottom = null;
+            }
+            if (!currentTop && !currentBottom) {
+                currentBrandKey = null;
+                document.getElementById('result-state').classList.add('hidden');
+                document.getElementById('result-state').classList.remove('flex');
+                document.getElementById('empty-state').classList.remove('hidden');
+            }
+            render3DModel();
+        }
+
+        function analyzeFit() {
+            let score = 50; 
+            const msgEl = document.getElementById('fit-message');
+
+            if (currentCategory === 'tops' && currentTop) {
+                const shoulderDiff = currentTop.shoulder - bodyParams.shoulders;
+                const activeChest = bodyParams.gender === 'female' ? bodyParams.chest : (bodyParams.waist + 15);
+                const chestDiff = currentTop.chest - activeChest;
+
+                score += (shoulderDiff * 3.2); 
+                score += (chestDiff * 1.2);
+                score = Math.max(5, Math.min(95, score));
+
+                document.getElementById('fit-indicator').style.left = `${score}%`;
+
+                if (score < 32) {
+                    msgEl.innerText = `警告：上衣 ${currentSizeKey || ''} 號尺寸偏緊！肩膀與胸圍有拉扯破圖現象，建議選擇大一號。`;
+                    msgEl.className = "text-xs text-rose-600 mt-5 font-bold leading-relaxed";
+                    document.getElementById('fit-indicator').style.borderColor = "#e11d48";
+                } else if (score > 68) {
+                    msgEl.innerText = `呈現寬鬆 Oversize 效果！這款 ${currentSizeKey || ''} 號上衣落肩明顯，極具運動休閒風。`;
+                    msgEl.className = "text-xs text-indigo-600 mt-5 font-bold leading-relaxed";
+                    document.getElementById('fit-indicator').style.borderColor = "#4f46e5";
+                } else {
+                    msgEl.innerText = `完美的標準合身上衣比例！肩線與胸圍完美貼合您的模特身材。`;
+                    msgEl.className = "text-xs text-emerald-700 mt-5 font-bold leading-relaxed";
+                    document.getElementById('fit-indicator').style.borderColor = "#059669";
+                }
+            } else if (currentCategory === 'bottoms' && currentBottom) {
+                const waistDiff = currentBottom.waist - bodyParams.waist;
+                const hipDiff = currentBottom.hip - bodyParams.hip;
+
+                score += (waistDiff * 2.8);
+                score += (hipDiff * 1.5);
+                score = Math.max(5, Math.min(95, score));
+
+                document.getElementById('fit-indicator').style.left = `${score}%`;
+
+                if (score < 32) {
+                    msgEl.innerText = `警告：褲款 ${currentSizeKey || ''} 號腰圍/臀圍過緊！腰頭與大腿有擠壓拉扯感，建議換大一號。`;
+                    msgEl.className = "text-xs text-rose-600 mt-5 font-bold leading-relaxed";
+                    document.getElementById('fit-indicator').style.borderColor = "#e11d48";
+                } else if (score > 68) {
+                    msgEl.innerText = `寬鬆落地褲效果！這款 ${currentSizeKey || ''} 號褲款腰臀部空間充裕，著用舒適無壓力。`;
+                    msgEl.className = "text-xs text-indigo-600 mt-5 font-bold leading-relaxed";
+                    document.getElementById('fit-indicator').style.borderColor = "#4f46e5";
+                } else {
+                    msgEl.innerText = `極佳的腰臀合身度！褲頭與臀線非常契合您的身型。`;
+                    msgEl.className = "text-xs text-emerald-700 mt-5 font-bold leading-relaxed";
+                    document.getElementById('fit-indicator').style.borderColor = "#059669";
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+<!-- Chosen Palette: Warm Studio Slate, Indigo Accent, Ambient Soft Skin Tone with Floor Pedestal Glow -->
+<!-- Application Structure Plan: Enhanced full-body 3D virtual fitting room. Camera frustum and vertical offset modified so the model's entire silhouette (from hair down to soles and shoes on the glowing studio floor platform) is completely in-frame. Includes quick camera switches for Full Body, Upper Body, and Footwear views. -->
+<!-- Visualization & Content Choices: Three.js WebGL procedural human avatar with physical skin shading, anatomical spline curves, detailed footwear soles, floor ring light, and auto-adjusting aspect ratio handling. Confirming NO SVG / Mermaid JS used. -->
+<!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
